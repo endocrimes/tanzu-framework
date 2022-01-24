@@ -97,4 +97,10 @@ const (
 
 	// CRDWaitPollTimeout is poll timeout for checking server resources
 	CRDWaitPollTimeout = time.Minute * 10
+
+	// DataValueFileName is the name of data value file
+	DataValueFileName = "values.yaml"
+
+	// AntreaAddonName is the name of Antrea Addon Controller
+	AntreaAddonName = "antrea"
 )

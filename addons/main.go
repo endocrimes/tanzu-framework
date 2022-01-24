@@ -26,6 +26,7 @@ import (
 	kapppkg "github.com/vmware-tanzu/carvel-kapp-controller/pkg/apis/packaging/v1alpha1"
 	kappdatapkg "github.com/vmware-tanzu/carvel-kapp-controller/pkg/apiserver/apis/datapackaging/v1alpha1"
 	"github.com/vmware-tanzu/tanzu-framework/addons/controllers"
+	antrea "github.com/vmware-tanzu/tanzu-framework/addons/controllers/antrea"
 	addonconfig "github.com/vmware-tanzu/tanzu-framework/addons/pkg/config"
 	"github.com/vmware-tanzu/tanzu-framework/addons/pkg/constants"
 	"github.com/vmware-tanzu/tanzu-framework/addons/pkg/crdwait"
@@ -143,6 +144,17 @@ func main() {
 	}
 	if err = addonReconciler.SetupWithManager(ctx, mgr, controller.Options{MaxConcurrentReconciles: clusterConcurrency}); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Addon")
+		os.Exit(1)
+	}
+
+	antreaConfigReconciler := &antrea.AntreaConfigReconciler{
+		Client: mgr.GetClient(),
+		Log:    ctrl.Log.WithName("controllers").WithName("AntreaConfig"),
+		Scheme: mgr.GetScheme(),
+	}
+
+	if err = antreaConfigReconciler.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "AntreaConfig")
 		os.Exit(1)
 	}
 

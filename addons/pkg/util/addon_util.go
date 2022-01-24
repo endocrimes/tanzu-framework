@@ -6,13 +6,20 @@ package util
 import (
 	"context"
 	"fmt"
+	"os/exec"
+	"path/filepath"
 	"strconv"
+	"strings"
+
+	"github.com/go-logr/logr"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	clusterapiv1beta1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/vmware-tanzu/tanzu-framework/addons/pkg/constants"
 	addontypes "github.com/vmware-tanzu/tanzu-framework/addons/pkg/types"
@@ -68,6 +75,11 @@ func GenerateAppNameFromAddonSecret(addonSecret *corev1.Secret) string {
 // GenerateAppSecretNameFromAddonSecret generates app secret name from addon secret
 func GenerateAppSecretNameFromAddonSecret(addonSecret *corev1.Secret) string {
 	return fmt.Sprintf("%s-data-values", GenerateAppNameFromAddonSecret(addonSecret))
+}
+
+// GenerateDataValueSecretNameFromAddonAndClusterNames generates data value secret name from addon names
+func GenerateDataValueSecretNameFromAddonAndClusterNames(clusterName, addonName string) string {
+	return fmt.Sprintf("%s-%s-data-values", clusterName, addonName)
 }
 
 // GenerateAppNamespaceFromAddonSecret generates app namespace from addons secret
@@ -217,4 +229,64 @@ func IsPackageInstallPresent(ctx context.Context,
 	}
 
 	return true, nil
+}
+
+// AddFinalizerToCRD adds finalizer to the config CRD if not present and
+// returns true if finalizer is added
+func AddFinalizerToCRD(
+	log logr.Logger,
+	addonName string,
+	configCRD client.Object) bool {
+
+	var patchAddonSecret bool
+
+	// add finalizer to addon secret
+	if !controllerutil.ContainsFinalizer(configCRD, addontypes.AddonFinalizer) {
+		log.Info("Adding finalizer to addon secret", constants.AddonNameLogKey, addonName)
+		controllerutil.AddFinalizer(configCRD, addontypes.AddonFinalizer)
+		patchAddonSecret = true
+	}
+
+	return patchAddonSecret
+}
+
+// RemoveFinalizerFromCRD removes finalizer from the config CRD if not present and
+// returns true if finalizer is removed
+func RemoveFinalizerFromCRD(
+	log logr.Logger,
+	addonName string,
+	configCRD client.Object) bool {
+
+	var patchAddonSecret bool
+
+	// add finalizer to addon secret
+	if !controllerutil.ContainsFinalizer(configCRD, addontypes.AddonFinalizer) {
+		log.Info("Removing finalizer to addon secret", constants.AddonNameLogKey, addonName)
+		controllerutil.RemoveFinalizer(configCRD, addontypes.AddonFinalizer)
+		patchAddonSecret = true
+	}
+
+	return patchAddonSecret
+}
+
+// get paths for external CRDs by introspecting versions of the go dependencies
+func GetExternalCRDPaths(externalDeps map[string][]string) ([]string, error) {
+	var crdPaths []string
+	gopath, err := exec.Command("go", "env", "GOPATH").Output()
+	if err != nil {
+		return crdPaths, err
+	}
+	for dep, crdDirs := range externalDeps {
+		depPath, err := exec.Command("go", "list", "-m", "-f", "{{ .Path }}@{{ .Version }}", dep).Output()
+		if err != nil {
+			return crdPaths, err
+		}
+		for _, crdDir := range crdDirs {
+			crdPaths = append(crdPaths, filepath.Join(strings.TrimSuffix(string(gopath), "\n"),
+				"pkg", "mod", strings.TrimSuffix(string(depPath), "\n"), crdDir))
+		}
+	}
+
+	logf.Log.Info("external CRD paths", "crdPaths", crdPaths)
+	return crdPaths, nil
 }
